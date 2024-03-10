@@ -1,4 +1,5 @@
 import cv2
+import os
 import dlib
 import numpy as np
 import csv
@@ -13,8 +14,15 @@ face_recognizer = cv2.face.LBPHFaceRecognizer_create()  # Usar o reconhecedor LB
 # Carregar o modelo treinado para reconhecimento facial
 face_recognizer.read("modelo_reconhecimento_face.xml")
 
+# Carregar o mapeamento de ID para nome a partir do arquivo CSV
+id_to_name = {}
+with open('label_to_name.csv', newline='') as csvfile:
+    reader = csv.reader(csvfile)
+    for row in reader:
+        id_to_name[int(row[0])] = row[1]
+
 # Dicionário para mapear IDs de rostos reconhecidos para nomes
-id_to_name = {}  # Inicialmente vazio, será atualizado dinamicamente
+#id_to_name = {}  # Inicialmente vazio, será atualizado dinamicamente
 
 # Definir constantes para os índices dos marcos faciais que correspondem aos olhos
 EYE_LEFT_START, EYE_LEFT_END = 42, 48
@@ -41,6 +49,10 @@ start_time = None
 end_time = None
 eyes_closed = False
 
+# Função para obter nome correspondente ao ID
+def get_name_from_id(id_):
+    return id_to_name.get(id_, f"Pessoa_{id_}")
+
 while True:
     # Capturar frame por frame
     ret, frame = cap.read()
@@ -56,9 +68,16 @@ while True:
     # Detectar rostos no frame
     faces = detector_faces(gray, 0)
     
+    # Definir margem de segurança como 10% do tamanho da imagem em cada lado
+    margin = int(0.1 * min(frame.shape[0], frame.shape[1]))
+    
     # Para cada rosto detectado, detectar olhos
     for face in faces:
         x, y, w, h = face.left(), face.top(), face.width(), face.height()
+        
+        # Verificar se o rosto está dentro da margem de segurança
+        if x < margin or y < margin or x + w > frame.shape[1] - margin or y + h > frame.shape[0] - margin:
+            continue
         
         # Extrair a região de interesse (ROI) do rosto para o reconhecimento facial
         roi_gray = gray[y:y+h, x:x+w]
@@ -67,16 +86,25 @@ while True:
         # Verificar a confiança da previsão
         if conf >= 45 and conf <= 85:
             # Extrair o nome da pessoa correspondente ao ID
-            name = id_to_name.get(id_, "Desconhecido")
+            name = get_name_from_id(id_)
             
-            # Atualizar o mapeamento ID para nome se o ID não estiver mapeado ainda
-            if name == "Desconhecido":
-                name = f"Pessoa_{id_}"
-                id_to_name[id_] = name
+            # Calcular as coordenadas do retângulo
+            rect_x1 = x
+            rect_y1 = y
+            rect_x2 = x + w
+            rect_y2 = y + h
             
-            # Desenhar um retângulo ao redor do rosto e exibir o nome da pessoa
-            cv2.rectangle(frame, (x, y), (x+w, y+h), (255, 0, 0), 2)
-            cv2.putText(frame, name, (x, y - 10), cv2.FONT_HERSHEY_SIMPLEX, 0.9, (36,255,12), 2)
+            # Desenhar um retângulo ao redor do rosto
+            cv2.rectangle(frame, (rect_x1, rect_y1), (rect_x2, rect_y2), (255, 0, 0), 2)
+                
+            # Calcular as coordenadas do texto
+            text_x = x
+            text_y = y - 10
+            text_x = max(text_x, 0)
+            text_y = max(text_y, 0)
+                
+            # Exibir o nome da pessoa acima do retângulo
+            cv2.putText(frame, name, (text_x, text_y), cv2.FONT_HERSHEY_SIMPLEX, 0.9, (36,255,12), 2)
             
             # Extrair os pontos dos olhos
             shape = predictor(gray, face)
